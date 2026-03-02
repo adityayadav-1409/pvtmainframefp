@@ -1,516 +1,518 @@
 =COLS> ----+----1----+----2----+----3----+----4----+----5----+----6----+----7--
-000001 IDENTIFICATION DIVISION.
-000002 PROGRAM-ID. NYFPOWFF.
-000003 AUTHOR. BHARATH CHEVIREDDY.
-000004 DATE-WRITTEN. 03/2026.
-000005 ENVIRONMENT DIVISION.
-000006 CONFIGURATION SECTION.
-000007 INPUT-OUTPUT SECTION.
-000008 FILE-CONTROL.
-000009     SELECT REPORT-FILE ASSIGN TO RPTOUT.
-000010 DATA DIVISION.
-000011 FILE SECTION.
-000012 FD  REPORT-FILE
-000013     RECORDING MODE IS F
-000014     BLOCK CONTAINS 0 RECORDS.
-000015 01  REPORT-REC        PIC X(400).
-000016********************************************************************
-000017*                                                                  *
-000018*A    ABSTRACT..                                                   *
-000019*  FILEPASS IS NEEDED FOR VUL18 ACTIVE 22 POLICIES. THIS FILEPASS  *
-000020*  IS REQUESTED TO DETERMINE ALL VUL18 POLICIES WITH ACTIVE       *
-000021*  STATUS 22 ALONG WITH POLICY DETAILS, OWNER INFORMATION,        *
-000022*  PLAN CODES AND ISSUE AGE.                                      *
-000023*  FILEPASS REPORT.                                                *
-000024*                                                                  *
-000025*J    JCL..                                                        *
-000026*                                                                  *
-000027* //NYFPOWFF EXEC PGM=NYFPOWFF                                     *
-000028* //SYSPDUMP DD SYSOUT=U,HOLD=YES                                  *
-000029* //SYSOUT   DD SYSOUT=*                                           *
-000030* //RPTOUT   DD DSN=T54.T9511F0.NYFPOWFF.OUTPUT.DATA,             *
-000031* //            DISP=(,CATLG,CATLG),                               *
-000032* //            UNIT=USER,                                         *
-000033* //            SPACE=(CYL,(50,30),RLSE),                          *
-000034* //            DCB=(RECFM=FB,LRECL=400,BLKSIZE=0)                 *
-000035* //VSAM2    DD DISP=SHR,DSN=P54.CK.BASEB.POLICY                   *
-000036* //FVDSEG1  DD DISP=SHR,DSN=P54.CK.BASEB.AUXSEG1                  *
-000037* //SYSIPT   DD DUMMY                                              *
-000038* //*                                                               *
-000039*                                                                  *
-000040*P    ENTRY PARAMETERS..                                           *
-000041*     NONE.                                                        *
-000042*                                                                  *
-000043*E    ERRORS DETECTED BY THIS ELEMENT..                            *
-000044*     I/O ERROR ON FILES                                           *
-000045*                                                                  *
-000046*C    ELEMENTS INVOKED BY THIS ELEMENT..                           *
-000047*                                                                  *
-000048*     CKVSAMIO ---- VSAM I/O INTERFACE                             *
-000049*     CKABEND  ---- FORCE A PROGRAM INTERUPT                       *
-000050*     CKETRLST ---- TRAILER LIST ELEMENT                           *
-000051*     CKETRGET ---- TRAILER GET ELEMENT                            *
-000052*     CKSDT1IO ---- AUX SEGMENT TABLE INTERFACE                    *
-000053*     CKSETADR ---- SET ADDRESS                                    *
-000054*     CKCOBCRD ---- PRINT ELEMENT                                  *
-000055*     CKDCEXIN ---- DATE CONVERSION                                *
-000056*     CKDCINEX ---- DATE CONVERSION                                *
-000057*     CKBATCHC ---- SEQUENTIAL FILE I/O                            *
-000058*                                                                  *
-000059*U    USER CONSTANTS AND TABLES REFERENCED..                       *
-000060*     NONE                                                         *
-000061*                                                                  *
-000062********************************************************************
-000063 EJECT
-000064 WORKING-STORAGE SECTION.
-000065 01  FILLER PIC X(32)
-000066     VALUE 'NYFPOWFF WORKING STORAGE BEGINS '.
-000067********************************************************************
-000068*    DATA AREAS
-000069********************************************************************
-000070 COPY CKRECMAX.
-000071 EJECT
-000072********************************************************************
-000073*    READ ONLY CONSTANTS
-000074********************************************************************
-000075 01  READ-ONLY-WORK-AREA.
-000076     05 HWORD              COMP PIC S9(04) VALUE +7.
-000077     05 WS-DUMMY           PIC X VALUE SPACE.
-000078     05 BINARY1            COMP PIC S9(04) VALUE +1.
-000079     05 INFORCE-VSAM       PIC X(8) VALUE 'VSAM2'.
-000080     05 MSG01-IO-ERROR     PIC X(19)
-000081                           VALUE 'I/O ERROR ON FILE -'.
-000082* SWITCHES AREA
-000083     05 END-OF-FILE-INDICATOR PIC X(1).
-000084        88 END-OF-FILE VALUE 'Y'.
-000085        88 CONTINUE-PROCESSING VALUE 'Y'.
-000086     05 VUL18-IND           PIC X(1).
-000087        88 VUL18-PRODUCT     VALUE 'Y'.
-000088        88 VUL18-NOT-PRODUCT VALUE 'N'.
-000089     05 ACTIVE-22-IND       PIC X(1).
-000090        88 ACTIVE-22-FOUND   VALUE 'Y'.
-000091        88 ACTIVE-22-NOT-FOUND VALUE 'N'.
-000092* I-O READ ONLY DATA
-000093 05 WS-IO-CODE                           PIC X(1).
-000094     88 INFORCE-IO-COMPLETED              VALUE '0'.
-000095     88 INFORCE-IO-EOF                    VALUE '6'.
-000096     88 INFORCE-IO-FAILED                 VALUE '1' THRU '5',
-000097                                                 '7' THRU '9'.
-000098* INFORCE READ ONLY DATA
-000099 05 INFORCE-FILE-LENGTH                  COMP SYNC PIC S9(4) VALUE +12.
-000100 05 INF-RECORD-KEY.
-000101     10 INFORCE-KEY-FILE-CODE             PIC X.
-000102     10 INFORCE-KEY-USER-ID               PIC X.
-000103     10 INFORCE-KEY-POL-NUM               PIC X(10).
-000104 05 INFORCE-BASIC-LENGTH                 COMP SYNC PIC S9(4).
-000105 05 INFORCE-RECSIZE                      COMP PIC S9(8) VALUE +65000.
-000106 05 FILLER REDEFINES INFORCE-RECSIZE.
-000107     10 FILLER                            PIC X(2).
-000108     10 INFORCE-PRMAX                     COMP PIC 9(4).
-000109 05 INFORCE-MAX-SEGS                     COMP PIC S9(4) VALUE +4000.
-000110* HISTORY READ ONLY DATA
-000111 05 SDT-H-TABLE-NAME                     PIC X(08) VALUE 'CKESDTBH'.
-000112 05 HISTORY-REC-CTL-LEN                  COMP PIC S9(4) VALUE +20.
-000113 05 INFORCE-VSAMX-INFO.
-000114     10 FILLER                            PIC X(7) VALUE 'FVDUNLD'.
-000115     10 FILLER                            PIC X VALUE LOW-VALUE.
-000116     10 FILLER                            PIC X VALUE ' '.
-000117     10 FILLER                            PIC X(08) VALUE LOW-VALUES.
-000118 05 HISTORY-VSAMX-INFO.
-000119     10 FILLER           PIC X(7)   VALUE 'FVDULHD'.
-000120     10 FILLER           PIC X      VALUE LOW-VALUE.
-000121     10 FILLER           PIC X      VALUE ' '.
-000122     10 FILLER           PIC X(11)  VALUE LOW-VALUES.
-000123 EJECT
-000124********************************************************************
-000125*                V A R I A B L E   D A T A   A R E A S             *
-000126********************************************************************
-000127 01 VARIABLE-WORK-AREA.
-000128     05 RECORD-LENGTH        PIC S9(8) COMP.
-000129     05 WS-ISSUE-AGE         PIC S9(03) COMP-3.
-000130     05 WS-ERROR-MSG         PIC X(50).
-000131     05 WS-SUB               PIC S9(04) COMP-3 VALUE 0.
-000132     05 WS-SEG-ID            PIC X(02).
-000133     05 WS-STATUS            PIC X(02).
-000134     05 WS-ISSUE-STATE       PIC X(02).
-000135     05 WS-OWNER-STATE       PIC X(02).
-000136     05 WS-PLAN-BASE         PIC X(02).
-000137     05 WS-PLAN-TYPE         PIC X(01).
-000138     05 WS-SEG-SEQ           COMP-3 PIC S9(5).
-000139     05 WS-ACF-IO-BYTE       PIC X.
-000140     05 WS-RETURN-CODE       PIC X.
-000141     05 WS-SEG-WORK-AREA     PIC X(25000) VALUE SPACE.
-000142* DATE AREA
-000143     05 WS-BIRTH-DATE.
-000144         10 WS-BRTH-MM         PIC X(02).
-000145         10 WS-BRTH-DD         PIC X(02).
-000146         10 WS-BRTH-YYYY       PIC X(04).
-000147     05 WS-ISSU-DATE.
-000148         10 WS-ISSU-MM         PIC X(02) VALUE SPACE.
-000149         10 WS-ISSU-DD         PIC X(02) VALUE SPACE.
-000150         10 WS-ISSU-YYYY       PIC X(04) VALUE SPACE.
-000151     05 WS-CURR-DATE.
-000152         10 WS-CURR-YEAR       PIC 9(02).
-000153         10 WS-CURR-MO         PIC 9(02).
-000154         10 WS-CURR-DAY        PIC 9(02).
-000155     05 WS-CURR-CONV-DATE.
-000156         10 WS-CURR-CONV-MM    PIC 9(02).
-000157         10 WS-CURR-CONV-DD    PIC 9(02).
-000158         10 WS-CURR-CONV-CC    PIC 9(02).
-000159         10 WS-CURR-CONV-YY    PIC 9(02).
-000160     05 WS-INT-CURR-DATE     COMP-3.
-000161         10 WS-INT-YEAR        PIC S9(03).
-000162         10 WS-INT-DAY         PIC S9(03).
-000163     05 WS-INT-ISSU-DATE     COMP-3.
-000164         10 WS-INT-ISSU-MMYY   PIC S9(3) COMP-3.
-000165         10 WS-INT-ISSU-DD     PIC S9(3) COMP-3.
-000166     05 WS-CKDCARTH-CONTANTS.
-000167         10 WS-DCARTH-MONTHS   PIC S9(3) COMP-3.
-000168         10 WS-DCARTH-DAYS     PIC S9(3) COMP-3.
-000169         10 WS-DCARTH-YEARS    PIC S9(3) COMP-3.
-000170         10 WS-DCARTH-DIFFERENCE PIC X VALUE '2'.
-000171     05 WS-POLICY-READ-CNT   PIC 9(09) VALUE ZERO.
-000172     05 WS-REC-WRITTEN-CNTR  PIC 9(09) VALUE ZERO.
-000173 EJECT
-000174********************************************************************
-000175* INFORCE RECORD CONTROL SECTION
-000176********************************************************************
-000177
-000178 01 INFORCE-FILE-AREA.
-000179     05 INFORCE-REC-LENGTH   PIC S9(4) COMP.
-000180     05 INFORCE-FILE-KEY.
-000181         10 INFORCE-REC-ID    PIC X(01).
-000182         10 INFORCE-USER-ID   PIC X(1).
-000183         10 INFORCE-POL-NUMBER PIC X(10).
-000184     05 INFORCE-IO-STAT      PIC X(01).
-000185     05 FILLER               PIC X(64985).
-000186 EJECT
-000187 01 INFORCE-FILE-DCB.
-000188     COPY CKDCBMAX.
-000189 EJECT
-000190 01 INFORCE-FILE-AUXDCB      PIC X(25000).
-000191 01 HISTORY-FILE-AUXDCB      PIC X(25000).
-000192 EJECT
-000193********************************************************************
-000194* HISTORY RECORD CONTROL SECTION
-000195********************************************************************
-000196
-000197 COPY CKNRECRC.
-000198 05 FILLER                   PIC X(13980).
-000199 EJECT
-000200 01 HISTORY-FILE-DCB.
-000201     COPY CKDCBLRG.
-000202     COPY CKUBGPRM.
-000203 EJECT
-000204********************************************************************
-000205* OUTPUT RECORD - VUL18 ACTIVE 22 FILEPASS
-000206********************************************************************
-000207
-000208 01 OFFLINE-RECORD           PIC X(400) VALUE SPACE.
-000209 EJECT
-000210********************************************************************
-000211* REPORT RECORD - VUL18 ACTIVE 22 DETAILS
-000212********************************************************************
-000213
-000214 01 RP-RECORD.
-000215     05 RP-POLICY             PIC X(10).
-000216     05 FILLER                PIC X(01) VALUE X'05'.
-000217     05 RP-POL-STATE          PIC X(02).
-000218     05 FILLER                PIC X(01) VALUE X'05'.
-000219     05 RP-STATUS             PIC X(02).
-000220     05 FILLER                PIC X(01) VALUE X'05'.
-000221     05 RP-STATUS-DESC        PIC X(30).
-000222     05 FILLER                PIC X(01) VALUE X'05'.
-000223     05 RP-ISSUE-DATE         PIC X(10).
-000224     05 FILLER                PIC X(01) VALUE X'05'.
-000225     05 RP-PRODUCT-NAME       PIC X(51).
-000226     05 FILLER                PIC X(01) VALUE X'05'.
-000227     05 RP-OWNER-NAME         PIC X(81).
-000228     05 FILLER                PIC X(01) VALUE X'05'.
-000229     05 RP-OWNER-ADDRESS      PIC X(100).
-000230     05 FILLER                PIC X(01) VALUE X'05'.
-000231     05 RP-PLAN-CODE          PIC X(11).
-000232     05 FILLER                PIC X(01) VALUE X'05'.
-000233     05 RP-ISSUE-STATE        PIC X(02).
-000234     05 FILLER                PIC X(01) VALUE X'05'.
-000235     05 RP-ISSUE-AGE          PIC ZZ9.
-000236     05 FILLER                PIC X(01) VALUE X'05'.
-000237 EJECT
-000238********************************************************************
-000239*                    ESSENTIAL SEGMENTS ONLY                        *
-000240********************************************************************
-000241
-000242 COPY CKFRECCV.
-000243 EJECT
-000244 COPY CKFRECAU.
-000245 EJECT
-000246 COPY CKFRECUB.
-000247 EJECT
-000248* AUXSEG1 RECORD AREA
-000249 COPY CKAUXDCB REPLACING AUXBLOCK-AUXILIARY-DCB
-000250                     BY AUX-INF-DCB.
-000251 EJECT
-000252 COPY CKESDTB1 REPLACING SEGMENT-DEFINITION-TABLE BY
-000253                     INFORCE-AUX-SDT.
-000254 EJECT
-000255********************************************************************
-000256*                     BATCH  I/O  RECORD                          *
-000257********************************************************************
-000258
-000259 COPY CKBCHCDS REPLACING
-000260      BCHCODES-CALLING-CODES BY BCHCODES.
-000261 01 FILLER PIC X(32)
-000262    VALUE 'NYFPOWFF WORKING STORAGE ENDS  '.
-000263 EJECT
-000264 LINKAGE SECTION.
-000265 EJECT
-000266 PROCEDURE DIVISION.
-000267********************************************************************
-000268*                        MAINLINE LOGIC                           *
-000269********************************************************************
-000270
-000271 0000-CONTROL-PROCESS.
-000272     PERFORM 1000-INITIALIZATION
-000273         THRU 1099-INITIALIZATION-EXIT.
-000274     PERFORM 1100-OPEN-FILES
-000275         THRU 1199-OPEN-FILES-EXIT.
-000276     SET CONTINUE-PROCESSING TO TRUE.
-000277     MOVE SPACE TO END-OF-FILE-INDICATOR.
-000278     PERFORM 2000-MAIN-PROCESS
-000279         THRU 2000-MAIN-PROCESS-EXIT
-000280         UNTIL END-OF-FILE.
-000281     PERFORM EOJ9000-CLOSE-FILES
-000282         THRU EOJ9999-EXIT.
-000283     GOBACK.
-000284 EJECT
-000285********************************************************************
-000286*                         INITIALIZATION                          *
-000287********************************************************************
-000288
-000289 1000-INITIALIZATION.
-000290     CALL 'CKSETADR' USING BINARY1
-000291                            UBAUHCB-AUX-HIST-DCB-ADDR
-000292                            AUX-HIST-DCB.
-000293     MOVE LOW-VALUES TO AUX-HIST-DCB.
-000294     CALL 'CKSETADR' USING BINARY1
-000295                            AUXSEGDT-PTR OF AUX-HIST-DCB
-000296                            HISTORY-AUX-SDT.
-000297     INITIALIZE END-OF-FILE-INDICATOR.
-000298     MOVE ZERO TO WS-IO-CODE.
-000299     MOVE LOW-VALUES TO INFORCE-FILE-DCB.
-000300     INITIALIZE INFORCE-FILE-AREA.
-000301     INITIALIZE WS-POLICY-READ-CNT WS-REC-WRITTEN-CNTR.
-000302* GET CURRENT DATE
-000303     ACCEPT WS-CURR-DATE FROM DATE.
-000304     MOVE WS-CURR-MO  TO WS-CURR-CONV-MM.
-000305     MOVE WS-CURR-DAY TO WS-CURR-CONV-DD.
-000306     MOVE 20          TO WS-CURR-CONV-CC.
-000307     MOVE WS-CURR-YEAR TO WS-CURR-CONV-YY.
-000308     CALL 'CKDCEXIN'
-000309         USING WS-CURR-CONV-DATE
-000310               WS-INT-CURR-DATE.
-000311 1099-INITIALIZATION-EXIT.
-000312     EXIT.
-000313 EJECT
-000314********************************************************************
-000315*                         OPEN ALL FILES                          *
-000316********************************************************************
-000317
-000318 1100-OPEN-FILES.
-000319* OPEN OUTPUT REPORT FILE
-000320     OPEN OUTPUT REPORT-FILE.
-000321     MOVE '6' TO WS-IO-CODE.
-000322     CALL 'CKVSAMIO'
-000323          USING INFORCE-VSAM
-000324                WS-IO-CODE
-000325                INFORCE-FILE-AREA
-000326                INFORCE-FILE-LENGTH
-000327                INF-RECORD-KEY
-000328                INFORCE-VSAMX-INFO.
-000329     IF WS-IO-CODE NOT EQUAL '0'
-000330         DISPLAY 'OPEN INFORCE FAILED'
-000331         DISPLAY 'WS-IO-CODE=' WS-IO-CODE
-000332         GO TO EOJ9900-ABEND
-000333     END-IF.
-000334     MOVE '6' TO WS-IO-CODE.
-000335     CALL 'CKSDT1IO'
-000336          USING WS-IO-CODE
-000337                INFORCE-AUX-SDT.
-000338     IF WS-IO-CODE NOT EQUAL '0'
-000339         DISPLAY 'OPEN OF AUXSEG1 FILE FAILED'
-000340         DISPLAY 'WS-IO-CODE=' WS-IO-CODE
-000341         GO TO EOJ9900-ABEND
-000342     END-IF.
-000343     MOVE '4' TO WS-IO-CODE.
-000344     CALL 'CKETRLST'
-000345          USING WS-IO-CODE
-000346                WS-DUMMY
-000347                INFORCE-FILE-DCB
-000348                WS-DUMMY
-000349                WS-DUMMY.
-000350 1199-OPEN-FILES-EXIT.
-000351     EXIT.
-000352 EJECT
-000353********************************************************************
-000354*                        MAIN PROCESS                             *
-000355********************************************************************
-000356
-000357 2000-MAIN-PROCESS.
-000358     PERFORM 2100-READ-NEXT-POLICY
-000359         THRU 2199-READ-NEXT-POLICY-EXIT.
-000360     IF NOT END-OF-FILE
-000361         PERFORM 2200-PROCESS-POLICY
-000362             THRU 2299-PROCESS-POLICY-EXIT
-000363     END-IF.
-000364 2000-MAIN-PROCESS-EXIT.
-000365     EXIT.
-000366 EJECT
-000367********************************************************************
-000368*                    READ NEXT POLICY                             *
-000369********************************************************************
-000370
-000371 2100-READ-NEXT-POLICY.
-000372     MOVE '8' TO WS-IO-CODE.
-000373     CALL 'CKVSAMIO'
-000374          USING INFORCE-VSAM
-000375                WS-IO-CODE
-000376                INFORCE-FILE-AREA
-000377                INFORCE-FILE-LENGTH
-000378                INF-RECORD-KEY
-000379                INFORCE-VSAMX-INFO.
-000380     IF WS-IO-CODE = '6'
-000381         SET END-OF-FILE TO TRUE
-000382     ELSE
-000383         IF WS-IO-CODE NOT = '0'
-000384             DISPLAY 'READ INFORCE FAILED'
-000385             DISPLAY 'WS-IO-CODE=' WS-IO-CODE
-000386             GO TO EOJ9900-ABEND
-000387         END-IF
-000388     END-IF.
-000389 2199-READ-NEXT-POLICY-EXIT.
-000390     EXIT.
-000391 EJECT
-000392********************************************************************
-000393*                     PROCESS POLICY                              *
-000394********************************************************************
-000395
-000396 2200-PROCESS-POLICY.
-000397     MOVE 'N' TO VUL18-IND
-000398     MOVE 'N' TO ACTIVE-22-IND
-000399* CHECK FOR VUL18 PRODUCT
-000400     IF PLAN-CODE OF CV-SEGMENT = 'VUL18'
-000401         SET VUL18-PRODUCT TO TRUE
-000402     END-IF
-000403* CHECK FOR ACTIVE STATUS 22
-000404     IF VUL18-PRODUCT
-000405         IF CURR-STAT OF CV-SEGMENT = '22'
-000406             SET ACTIVE-22-FOUND TO TRUE
-000407         END-IF
-000408     END-IF
-000409* IF VUL18 AND ACTIVE 22, PROCESS THE POLICY
-000410     IF VUL18-PRODUCT AND ACTIVE-22-FOUND
-000411         PERFORM 2300-BUILD-REPORT-RECORD
-000412             THRU 2399-BUILD-REPORT-RECORD-EXIT
-000413         PERFORM 2400-WRITE-REPORT-RECORD
-000414             THRU 2499-WRITE-REPORT-RECORD-EXIT
-000415     END-IF
-000416 2299-PROCESS-POLICY-EXIT.
-000417     EXIT.
-000418 EJECT
-000419********************************************************************
-000420*                  BUILD REPORT RECORD                            *
-000421********************************************************************
-000422
-000423 2300-BUILD-REPORT-RECORD.
-000424* MOVE POLICY NUMBER
-000425     MOVE POLICY-NUM OF CV-SEGMENT TO RP-POLICY
-000426* MOVE POLICY STATE
-000427     MOVE STATE OF CV-SEGMENT TO RP-POL-STATE
-000428* MOVE STATUS
-000429     MOVE CURR-STAT OF CV-SEGMENT TO RP-STATUS
-000430* MOVE STATUS DESCRIPTION
-000431     EVALUATE CURR-STAT OF CV-SEGMENT
-000432         WHEN '22'
-000433             MOVE 'ACTIVE INFORCE' TO RP-STATUS-DESC
-000434         WHEN OTHER
-000435             MOVE 'UNKNOWN STATUS' TO RP-STATUS-DESC
-000436     END-EVALUATE
-000437* MOVE ISSUE DATE
-000438     MOVE ISSUE-DATE OF CV-SEGMENT TO WS-ISSU-DATE
-000439     MOVE WS-ISSU-DATE TO RP-ISSUE-DATE
-000440* MOVE PRODUCT NAME
-000441     MOVE PLAN-NAME OF CV-SEGMENT TO RP-PRODUCT-NAME
-000442* MOVE OWNER NAME
-000443     MOVE OWNER-NAME OF AU-SEGMENT TO RP-OWNER-NAME
-000444* MOVE OWNER ADDRESS
-000445     STRING ADDRESS-1 OF AU-SEGMENT DELIMITED BY SPACE
-000446            ' ' DELIMITED BY SIZE
-000447            ADDRESS-2 OF AU-SEGMENT DELIMITED BY SPACE
-000448            ' ' DELIMITED BY SIZE
-000449            CITY OF AU-SEGMENT DELIMITED BY SPACE
-000450            ' ' DELIMITED BY SIZE
-000451            STATE OF AU-SEGMENT DELIMITED BY SPACE
-000452            ' ' DELIMITED BY SIZE
-000453            ZIP-CODE OF AU-SEGMENT DELIMITED BY SPACE
-000454            INTO RP-OWNER-ADDRESS
-000455* MOVE PLAN CODE
-000456     MOVE PLAN-CODE OF CV-SEGMENT TO RP-PLAN-CODE
-000457* MOVE ISSUE STATE
-000458     MOVE ISSUE-STATE OF CV-SEGMENT TO RP-ISSUE-STATE
-000459* CALCULATE AND MOVE ISSUE AGE
-000460     PERFORM 2500-CALCULATE-ISSUE-AGE
-000461         THRU 2599-CALCULATE-ISSUE-AGE-EXIT
-000462     MOVE WS-ISSUE-AGE TO RP-ISSUE-AGE
-000463 2399-BUILD-REPORT-RECORD-EXIT.
-000464     EXIT.
-000465 EJECT
-000466********************************************************************
-000467*                 WRITE REPORT RECORD                            *
-000468********************************************************************
-000469
-000470 2400-WRITE-REPORT-RECORD.
-000471     WRITE REPORT-REC FROM RP-RECORD
-000472     IF NOT WRITE-OK
-000473         DISPLAY 'WRITE ERROR ON REPORT FILE'
-000474         GO TO EOJ9900-ABEND
-000475     END-IF
-000476     ADD 1 TO WS-REC-WRITTEN-CNTR
-000477 2499-WRITE-REPORT-RECORD-EXIT.
-000478     EXIT.
-000479 EJECT
-000480********************************************************************
-000481*               CALCULATE ISSUE AGE                               *
-000482********************************************************************
-000483
-000484 2500-CALCULATE-ISSUE-AGE.
-000485* CONVERT ISSUE DATE TO INTERNAL FORMAT
-000486     MOVE ISSUE-DATE OF CV-SEGMENT TO WS-INT-ISSU-DATE
-000487     CALL 'CKDCINEX' USING WS-ISSU-DATE WS-INT-ISSU-DATE
-000488* CALCULATE AGE DIFFERENCE
-000489     CALL 'CKDCARTH' USING WS-INT-CURR-DATE
-000490                           WS-INT-ISSU-DATE
-000491                           WS-DCARTH-DIFFERENCE
-000492                           WS-ISSUE-AGE
-000493 2599-CALCULATE-ISSUE-AGE-EXIT.
-000494     EXIT.
-000495 EJECT
-000496********************************************************************
-000497*                        CLOSE FILES                              *
-000498********************************************************************
-000499
-000500 EOJ9000-CLOSE-FILES.
-000501* CLOSE REPORT FILE
-000502     CLOSE REPORT-FILE
-000503* CLOSE INFORCE FILE
-000504     MOVE '5' TO WS-IO-CODE.
-000505     CALL 'CKVSAMIO'
-000506          USING INFORCE-VSAM
-000507                WS-IO-CODE
-000508* DISPLAY COUNTERS
-000509     DISPLAY 'POLICIES READ: ' WS-POLICY-READ-CNT
-000510     DISPLAY 'RECORDS WRITTEN: ' WS-REC-WRITTEN-CNTR
-000511     GO TO EOJ9999-EXIT.
-000512 EOJ9900-ABEND.
-000513     DISPLAY 'PROGRAM ABENDING DUE TO ERROR'
-000514 EOJ9999-EXIT.
-000515     EXIT.
+IDENTIFICATION DIVISION.
+PROGRAM-ID. NYFPOWFF.
+AUTHOR. BHARATH CHEVIREDDY.
+DATE-WRITTEN. 03/2026.
+ENVIRONMENT DIVISION.
+CONFIGURATION SECTION.
+INPUT-OUTPUT SECTION.
+FILE-CONTROL.
+    SELECT REPORT-FILE ASSIGN TO RPTOUT.
+DATA DIVISION.
+FILE SECTION.
+FD  REPORT-FILE
+    RECORDING MODE IS F
+    BLOCK CONTAINS 0 RECORDS.
+01  REPORT-REC        PIC X(400).
+********************************************************************
+*                                                                  *
+*A    ABSTRACT..                                                   *
+*  FILEPASS IS NEEDED FOR VUL18 ACTIVE 22 POLICIES. THIS FILEPASS  *
+*  IS REQUESTED TO DETERMINE ALL VUL18 POLICIES WITH ACTIVE       *
+*  STATUS 22 ALONG WITH POLICY DETAILS, OWNER INFORMATION,        *
+*  PLAN CODES AND ISSUE AGE.                                      *
+*  FILEPASS REPORT.                                                *
+*                                                                  *
+25*J    JCL..                                                        *
+26*                                                                  *
+27* //NYFPOWFF EXEC PGM=NYFPOWFF                                     *
+28* //SYSPDUMP DD SYSOUT=U,HOLD=YES                                  *
+29* //SYSOUT   DD SYSOUT=*                                           *
+3* //RPTOUT   DD DSN=T54.T9511F.NYFPOWFF.OUTPUT.DATA,             *
+31* //            DISP=(,CATLG,CATLG),                               *
+32* //            UNIT=USER,                                         *
+33* //            SPACE=(CYL,(5,3),RLSE),                          *
+34* //            DCB=(RECFM=FB,LRECL=4,BLKSIZE=)                 *
+35* //VSAM2    DD DISP=SHR,DSN=P54.CK.BASEB.POLICY                   *
+36* //FVDSEG1  DD DISP=SHR,DSN=P54.CK.BASEB.AUXSEG1                  *
+37* //SYSIPT   DD DUMMY                                              *
+38* //*                                                               *
+39*                                                                  *
+4*P    ENTRY PARAMETERS..                                           *
+41*     NONE.                                                        *
+42*                                                                  *
+43*E    ERRORS DETECTED BY THIS ELEMENT..                            *
+44*     I/O ERROR ON FILES                                           *
+45*                                                                  *
+46*C    ELEMENTS INVOKED BY THIS ELEMENT..                           *
+47*                                                                  *
+48*     CKVSAMIO ---- VSAM I/O INTERFACE                             *
+49*     CKABEND  ---- FORCE A PROGRAM INTERUPT                       *
+5*     CKETRLST ---- TRAILER LIST ELEMENT                           *
+51*     CKETRGET ---- TRAILER GET ELEMENT                            *
+52*     CKSDT1IO ---- AUX SEGMENT TABLE INTERFACE                    *
+53*     CKSETADR ---- SET ADDRESS                                    *
+54*     CKCOBCRD ---- PRINT ELEMENT                                  *
+55*     CKDCEXIN ---- DATE CONVERSION                                *
+56*     CKDCINEX ---- DATE CONVERSION                                *
+57*     CKBATCHC ---- SEQUENTIAL FILE I/O                            *
+58*                                                                  *
+59*U    USER CONSTANTS AND TABLES REFERENCED..                       *
+6*     NONE                                                         *
+61*                                                                  *
+62********************************************************************
+63 EJECT
+64 WORKING-STORAGE SECTION.
+65 1  FILLER PIC X(32)
+66     VALUE 'NYFPOWFF WORKING STORAGE BEGINS '.
+67********************************************************************
+68*    DATA AREAS
+69********************************************************************
+COPY CKRECMAX.
+71 EJECT
+72********************************************************************
+73*    READ ONLY CONSTANTS
+74********************************************************************
+75 01  READ-ONLY-WORK-AREA.
+76     05 HWORD              COMP PIC S9(04) VALUE +7.
+77     05 WS-DUMMY           PIC X VALUE SPACE.
+78     05 BINARY1            COMP PIC S9(04) VALUE +1.
+79     05 INFORCE-VSAM       PIC X(08) VALUE 'VSAM2'.
+8     05 MSG01-IO-ERROR     PIC X(19)
+81                           VALUE 'I/O ERROR ON FILE -'.
+82* SWITCHES AREA
+83     05 END-OF-FILE-INDICATOR PIC X(01).
+84        88 END-OF-FILE VALUE 'Y'.
+85        88 CONTINUE-PROCESSING VALUE 'Y'.
+86     05 VUL18-IND           PIC X(01).
+87        88 VUL18-PRODUCT     VALUE 'Y'.
+88        88 VUL18-NOT-PRODUCT VALUE 'N'.
+89     5 ACTIVE-22-IND       PIC X(1).
+9        88 ACTIVE-22-FOUND   VALUE 'Y'.
+91        88 ACTIVE-22-NOT-FOUND VALUE 'N'.
+92* I-O READ ONLY DATA
+93 5 WS-IO-CODE                           PIC X(1).
+94     88 INFORCE-IO-COMPLETED              VALUE '0'.
+95     88 INFORCE-IO-EOF                    VALUE '6'.
+96     88 INFORCE-IO-FAILED                 VALUE '1' THRU '5',
+97                                                 '7' THRU '9'.
+98* INFORCE READ ONLY DATA
+99 5 INFORCE-FILE-LENGTH                  COMP SYNC PIC S9(4) VALUE +12.
+1 5 INF-RECORD-KEY.
+11     1 INFORCE-KEY-FILE-CODE             PIC X.
+12     1 INFORCE-KEY-USER-ID               PIC X.
+13     1 INFORCE-KEY-POL-NUM               PIC X(1).
+14 5 INFORCE-BASIC-LENGTH                 COMP SYNC PIC S9(4).
+15 5 INFORCE-RECSIZE                      COMP PIC S9(8) VALUE +65.
+16 5 FILLER REDEFINES INFORCE-RECSIZE.
+17     1 FILLER                            PIC X(2).
+18     1 INFORCE-PRMAX                     COMP PIC 9(4).
+19 5 INFORCE-MAX-SEGS                     COMP PIC S9(4) VALUE +4.
+11* HISTORY READ ONLY DATA
+111 5 SDT-H-TABLE-NAME                     PIC X(8) VALUE 'CKESDTBH'.
+112 5 HISTORY-REC-CTL-LEN                  COMP PIC S9(4) VALUE +20.
+113 5 INFORCE-VSAMX-INFO.
+114     1 FILLER                            PIC X(7) VALUE 'FVDUNLD'.
+115     1 FILLER                            PIC X VALUE LOW-VALUE.
+116     1 FILLER                            PIC X VALUE ' '.
+117     1 FILLER                            PIC X(8) VALUE LOW-VALUES.
+118 5 HISTORY-VSAMX-INFO.
+119     1 FILLER           PIC X(7)   VALUE 'FVDULHD'.
+12     1 FILLER           PIC X      VALUE LOW-VALUE.
+121     1 FILLER           PIC X      VALUE ' '.
+122     1 FILLER           PIC X(11)  VALUE LOW-VALUES.
+123 EJECT
+124********************************************************************
+125*                V A R I A B L E   D A T A   A R E A S             *
+126********************************************************************
+127 1 VARIABLE-WORK-AREA.
+128     5 RECORD-LENGTH        PIC S9(8) COMP.
+129     5 WS-ISSUE-AGE         PIC S9(3) COMP-3.
+13     5 WS-ERROR-MSG         PIC X(5).
+131     5 WS-SUB               PIC S9(4) COMP-3 VALUE .
+132     5 WS-SEG-ID            PIC X(2).
+133     5 WS-STATUS            PIC X(2).
+134     5 WS-ISSUE-STATE       PIC X(2).
+135     5 WS-OWNER-STATE       PIC X(2).
+136     5 WS-PLAN-BASE         PIC X(2).
+137     5 WS-PLAN-TYPE         PIC X(1).
+138     5 WS-SEG-SEQ           COMP-3 PIC S9(5).
+139     5 WS-ACF-IO-BYTE       PIC X.
+14     5 WS-RETURN-CODE       PIC X.
+141     5 WS-SEG-WORK-AREA     PIC X(25) VALUE SPACE.
+142* DATE AREA
+143     5 WS-BIRTH-DATE.
+144         1 WS-BRTH-MM         PIC X(2).
+145         1 WS-BRTH-DD         PIC X(2).
+146         1 WS-BRTH-YYYY       PIC X(4).
+147     5 WS-ISSU-DATE.
+148         1 WS-ISSU-MM         PIC X(2) VALUE SPACE.
+149         1 WS-ISSU-DD         PIC X(2) VALUE SPACE.
+15         1 WS-ISSU-YYYY       PIC X(4) VALUE SPACE.
+151     5 WS-CURR-DATE.
+152         1 WS-CURR-YEAR       PIC 9(2).
+153         1 WS-CURR-MO         PIC 9(2).
+154         1 WS-CURR-DAY        PIC 9(2).
+155     5 WS-CURR-CONV-DATE.
+156         1 WS-CURR-CONV-MM    PIC 9(2).
+157         1 WS-CURR-CONV-DD    PIC 9(2).
+158         1 WS-CURR-CONV-CC    PIC 9(2).
+159         1 WS-CURR-CONV-YY    PIC 9(2).
+16     5 WS-INT-CURR-DATE     COMP-3.
+161         1 WS-INT-YEAR        PIC S9(3).
+162         1 WS-INT-DAY         PIC S9(3).
+163     5 WS-INT-ISSU-DATE     COMP-3.
+164         1 WS-INT-ISSU-MMYY   PIC S9(3) COMP-3.
+165         1 WS-INT-ISSU-DD     PIC S9(3) COMP-3.
+166     5 WS-CKDCARTH-CONTANTS.
+167         1 WS-DCARTH-MONTHS   PIC S9(3) COMP-3.
+168         1 WS-DCARTH-DAYS     PIC S9(3) COMP-3.
+169         1 WS-DCARTH-YEARS    PIC S9(3) COMP-3.
+17         1 WS-DCARTH-DIFFERENCE PIC X VALUE '2'.
+171     5 WS-POLICY-READ-CNT   PIC 9(9) VALUE ZERO.
+172     5 WS-REC-WRITTEN-CNTR  PIC 9(9) VALUE ZERO.
+173 EJECT
+174********************************************************************
+175* INFORCE RECORD CONTROL SECTION
+176********************************************************************
+177
+178 1 INFORCE-FILE-AREA.
+179     5 INFORCE-REC-LENGTH   PIC S9(4) COMP.
+18     5 INFORCE-FILE-KEY.
+181         1 INFORCE-REC-ID    PIC X(1).
+182         1 INFORCE-USER-ID   PIC X(1).
+183         1 INFORCE-POL-NUMBER PIC X(1).
+184     5 INFORCE-IO-STAT      PIC X(1).
+185     5 FILLER               PIC X(64985).
+186 EJECT
+187 1 INFORCE-FILE-DCB.
+188     COPY CKDCBMAX.
+189 EJECT
+19 1 INFORCE-FILE-AUXDCB      PIC X(25).
+191 1 HISTORY-FILE-AUXDCB      PIC X(25).
+192 EJECT
+193********************************************************************
+194* HISTORY RECORD CONTROL SECTION
+195********************************************************************
+196
+197 COPY CKNRECRC.
+198 5 FILLER                   PIC X(1398).
+199 EJECT
+2 1 HISTORY-FILE-DCB.
+21     COPY CKDCBLRG.
+22     COPY CKUBGPRM.
+23 EJECT
+24********************************************************************
+25* OUTPUT RECORD - VUL18 ACTIVE 22 FILEPASS
+26********************************************************************
+27
+28 1 OFFLINE-RECORD           PIC X(4) VALUE SPACE.
+29 EJECT
+21********************************************************************
+211* REPORT RECORD - VUL18 ACTIVE 22 DETAILS
+212********************************************************************
+213
+214 1 RP-RECORD.
+215     5 RP-POLICY             PIC X(1).
+216     5 FILLER                PIC X(1) VALUE X'5'.
+217     5 RP-POL-STATE          PIC X(2).
+218     5 FILLER                PIC X(1) VALUE X'5'.
+219     5 RP-STATUS             PIC X(2).
+22     5 FILLER                PIC X(1) VALUE X'5'.
+221     5 RP-STATUS-DESC        PIC X(3).
+222     5 FILLER                PIC X(1) VALUE X'5'.
+223     5 RP-ISSUE-DATE         PIC X(1).
+224     5 FILLER                PIC X(1) VALUE X'5'.
+225     5 RP-PRODUCT-NAME       PIC X(51).
+226     5 FILLER                PIC X(1) VALUE X'5'.
+227     5 RP-OWNER-NAME         PIC X(81).
+228     5 FILLER                PIC X(1) VALUE X'5'.
+229     5 RP-OWNER-ADDRESS      PIC X(1).
+23     5 FILLER                PIC X(1) VALUE X'5'.
+231     5 RP-PLAN-CODE          PIC X(11).
+232     5 FILLER                PIC X(1) VALUE X'5'.
+233     5 RP-ISSUE-STATE        PIC X(2).
+234     5 FILLER                PIC X(1) VALUE X'5'.
+235     5 RP-ISSUE-AGE          PIC ZZ9.
+236     5 FILLER                PIC X(1) VALUE X'5'.
+237 EJECT
+238********************************************************************
+239*                    ESSENTIAL SEGMENTS ONLY                        *
+24********************************************************************
+241
+242 COPY CKFRECCV.
+243 EJECT
+244 COPY CKFRECAU.
+245 EJECT
+246 COPY CKFRECUB.
+247 EJECT
+248* AUXSEG1 RECORD AREA
+249 COPY CKAUXDCB REPLACING AUXBLOCK-AUXILIARY-DCB
+25                     BY AUX-INF-DCB.
+251 EJECT
+252 COPY CKESDTB1 REPLACING SEGMENT-DEFINITION-TABLE BY
+253                     INFORCE-AUX-SDT.
+254 EJECT
+255********************************************************************
+256*                     BATCH  I/O  RECORD                          *
+257********************************************************************
+258
+259 COPY CKBCHCDS REPLACING
+26      BCHCODES-CALLING-CODES BY BCHCODES.
+261 1 FILLER PIC X(32)
+262    VALUE 'NYFPOWFF WORKING STORAGE ENDS  '.
+263 EJECT
+264 LINKAGE SECTION.
+265 EJECT
+266 PROCEDURE DIVISION.
+267********************************************************************
+268*                        MAINLINE LOGIC                           *
+269********************************************************************
+27271 -CONTROL-PROCESS.
+272     PERFORM 1-INITIALIZATION
+273         THRU 199-INITIALIZATION-EXIT.
+274     PERFORM 11-OPEN-FILES
+275         THRU 1199-OPEN-FILES-EXIT.
+276     SET CONTINUE-PROCESSING TO TRUE.
+277     MOVE SPACE TO END-OF-FILE-INDICATOR.
+278     PERFORM 2-MAIN-PROCESS
+279         THRU 2-MAIN-PROCESS-EXIT
+28         UNTIL END-OF-FILE.
+281     PERFORM EOJ9-CLOSE-FILES
+282         THRU EOJ9999-EXIT.
+283     GOBACK.
+284 EJECT
+285********************************************************************
+286*                         INITIALIZATION                          *
+287********************************************************************
+288
+289 1-INITIALIZATION.
+29     CALL 'CKSETADR' USING BINARY1
+291                            UBAUHCB-AUX-HIST-DCB-ADDR
+292                            AUX-HIST-DCB.
+293     MOVE LOW-VALUES TO AUX-HIST-DCB.
+294     CALL 'CKSETADR' USING BINARY1
+295                            AUXSEGDT-PTR OF AUX-HIST-DCB
+296                            HISTORY-AUX-SDT.
+297     INITIALIZE END-OF-FILE-INDICATOR.
+298     MOVE ZERO TO WS-IO-CODE.
+299     MOVE LOW-VALUES TO INFORCE-FILE-DCB.
+3     INITIALIZE INFORCE-FILE-AREA.
+31     INITIALIZE WS-POLICY-READ-CNT WS-REC-WRITTEN-CNTR.
+32* GET CURRENT DATE
+33     ACCEPT WS-CURR-DATE FROM DATE.
+34     MOVE WS-CURR-MO  TO WS-CURR-CONV-MM.
+35     MOVE WS-CURR-DAY TO WS-CURR-CONV-DD.
+36     MOVE 2          TO WS-CURR-CONV-CC.
+37     MOVE WS-CURR-YEAR TO WS-CURR-CONV-YY.
+38     CALL 'CKDCEXIN'
+39         USING WS-CURR-CONV-DATE
+31               WS-INT-CURR-DATE.
+311 199-INITIALIZATION-EXIT.
+312     EXIT.
+313 EJECT
+314********************************************************************
+315*                         OPEN ALL FILES                          *
+316********************************************************************
+317
+318 11-OPEN-FILES.
+319* OPEN OUTPUT REPORT FILE
+32     OPEN OUTPUT REPORT-FILE.
+321     MOVE '6' TO WS-IO-CODE.
+322     CALL 'CKVSAMIO'
+323          USING INFORCE-VSAM
+324                WS-IO-CODE
+325                INFORCE-FILE-AREA
+326                INFORCE-FILE-LENGTH
+327                INF-RECORD-KEY
+328                INFORCE-VSAMX-INFO.
+329     IF WS-IO-CODE NOT EQUAL ''
+33         DISPLAY 'OPEN INFORCE FAILED'
+331         DISPLAY 'WS-IO-CODE=' WS-IO-CODE
+332         GO TO EOJ99-ABEND
+333     END-IF.
+334     MOVE '6' TO WS-IO-CODE.
+335     CALL 'CKSDT1IO'
+336          USING WS-IO-CODE
+337                INFORCE-AUX-SDT.
+338     IF WS-IO-CODE NOT EQUAL ''
+339         DISPLAY 'OPEN OF AUXSEG1 FILE FAILED'
+34         DISPLAY 'WS-IO-CODE=' WS-IO-CODE
+341         GO TO EOJ99-ABEND
+342     END-IF.
+343     MOVE '4' TO WS-IO-CODE.
+344     CALL 'CKETRLST'
+          USING WS-IO-CODE
+                WS-DUMMY
+                INFORCE-FILE-DCB
+                WS-DUMMY
+                WS-DUMMY
+     IF WS-IO-CODE NOT EQUAL ''
+         DISPLAY 'ERROR IN CKETRLST'
+         DISPLAY 'WS-IO-CODE=' WS-IO-CODE
+         GO TO EOJ99-ABEND
+     END-IF
+35 1199-OPEN-FILES-EXIT.
+351     EXIT.
+352 EJECT
+353********************************************************************
+354*                        MAIN PROCESS                             *
+356
+357 2-MAIN-PROCESS.
+358     PERFORM 21-READ-NEXT-POLICY
+359         THRU 2199-READ-NEXT-POLICY-EXIT.
+36     IF NOT END-OF-FILE
+361         PERFORM 22-PROCESS-POLICY
+362             THRU 2299-PROCESS-POLICY-EXIT
+363     END-IF.
+364 2-MAIN-PROCESS-EXIT.
+365     EXIT.
+366 EJECT
+367********************************************************************
+368*                    READ NEXT POLICY                             *
+369********************************************************************
+37371 21-READ-NEXT-POLICY.
+372     MOVE '8' TO WS-IO-CODE.
+373     CALL 'CKVSAMIO'
+374          USING INFORCE-VSAM
+375                WS-IO-CODE
+376                INFORCE-FILE-AREA
+377                INFORCE-FILE-LENGTH
+378                INF-RECORD-KEY
+379                INFORCE-VSAMX-INFO.
+38     IF WS-IO-CODE = '6'
+381         SET END-OF-FILE TO TRUE
+382     ELSE
+383         IF WS-IO-CODE NOT = ''
+384             DISPLAY 'READ INFORCE FAILED'
+385             DISPLAY 'WS-IO-CODE=' WS-IO-CODE
+386             GO TO EOJ99-ABEND
+387         END-IF
+388     END-IF.
+389 2199-READ-NEXT-POLICY-EXIT.
+39     EXIT.
+391 EJECT
+392********************************************************************
+393*                     PROCESS POLICY                              *
+394********************************************************************
+395
+396 22-PROCESS-POLICY.
+397     MOVE 'N' TO VUL18-IND
+398     MOVE 'N' TO ACTIVE-22-IND
+399* CHECK FOR VUL18 PRODUCT
+4     IF PLAN-CODE OF CV-SEGMENT = 'VUL18'
+41         SET VUL18-PRODUCT TO TRUE
+42     END-IF
+43* CHECK FOR ACTIVE STATUS 22
+44     IF VUL18-PRODUCT
+45         IF CURR-STAT OF CV-SEGMENT = '22'
+46             SET ACTIVE-22-FOUND TO TRUE
+47         END-IF
+48     END-IF
+49* IF VUL18 AND ACTIVE 22, PROCESS THE POLICY
+41     IF VUL18-PRODUCT AND ACTIVE-22-FOUND
+411         PERFORM 23-BUILD-REPORT-RECORD
+412             THRU 2399-BUILD-REPORT-RECORD-EXIT
+413         PERFORM 24-WRITE-REPORT-RECORD
+414             THRU 2499-WRITE-REPORT-RECORD-EXIT
+415     END-IF
+416 2299-PROCESS-POLICY-EXIT.
+417     EXIT.
+418 EJECT
+419********************************************************************
+42*                  BUILD REPORT RECORD                            *
+421********************************************************************
+422
+423 23-BUILD-REPORT-RECORD.
+424* MOVE POLICY NUMBER
+425     MOVE POLICY-NUM OF CV-SEGMENT TO RP-POLICY
+426* MOVE POLICY STATE
+427     MOVE STATE OF CV-SEGMENT TO RP-POL-STATE
+428* MOVE STATUS
+429     MOVE CURR-STAT OF CV-SEGMENT TO RP-STATUS
+43* MOVE STATUS DESCRIPTION
+431     EVALUATE CURR-STAT OF CV-SEGMENT
+432         WHEN '22'
+433             MOVE 'ACTIVE INFORCE' TO RP-STATUS-DESC
+434         WHEN OTHER
+435             MOVE 'UNKNOWN STATUS' TO RP-STATUS-DESC
+436     END-EVALUATE
+437* MOVE ISSUE DATE
+438     MOVE ISSUE-DATE OF CV-SEGMENT TO WS-ISSU-DATE
+439     MOVE WS-ISSU-DATE TO RP-ISSUE-DATE
+44* MOVE PRODUCT NAME
+441     MOVE PLAN-NAME OF CV-SEGMENT TO RP-PRODUCT-NAME
+442* MOVE OWNER NAME
+443     MOVE OWNER-NAME OF AU-SEGMENT TO RP-OWNER-NAME
+444* MOVE OWNER ADDRESS
+445     STRING ADDRESS-1 OF AU-SEGMENT DELIMITED BY SPACE
+446            ' ' DELIMITED BY SIZE
+447            ADDRESS-2 OF AU-SEGMENT DELIMITED BY SPACE
+448            ' ' DELIMITED BY SIZE
+449            CITY OF AU-SEGMENT DELIMITED BY SPACE
+45            ' ' DELIMITED BY SIZE
+451            STATE OF AU-SEGMENT DELIMITED BY SPACE
+452            ' ' DELIMITED BY SIZE
+453            ZIP-CODE OF AU-SEGMENT DELIMITED BY SPACE
+454            INTO RP-OWNER-ADDRESS
+455* MOVE PLAN CODE
+456     MOVE PLAN-CODE OF CV-SEGMENT TO RP-PLAN-CODE
+457* MOVE ISSUE STATE
+458     MOVE ISSUE-STATE OF CV-SEGMENT TO RP-ISSUE-STATE
+459* CALCULATE AND MOVE ISSUE AGE
+46     PERFORM 25-CALCULATE-ISSUE-AGE
+461         THRU 2599-CALCULATE-ISSUE-AGE-EXIT
+462     MOVE WS-ISSUE-AGE TO RP-ISSUE-AGE
+463 2399-BUILD-REPORT-RECORD-EXIT.
+464     EXIT.
+465 EJECT
+466********************************************************************
+467*                 WRITE REPORT RECORD                            *
+468********************************************************************
+469
+47 24-WRITE-REPORT-RECORD.
+471     WRITE REPORT-REC FROM RP-RECORD
+472     IF NOT WRITE-OK
+473         DISPLAY 'WRITE ERROR ON REPORT FILE'
+474         GO TO EOJ99-ABEND
+475     END-IF
+476     ADD 1 TO WS-REC-WRITTEN-CNTR
+477 2499-WRITE-REPORT-RECORD-EXIT.
+478     EXIT.
+479 EJECT
+48********************************************************************
+481*               CALCULATE ISSUE AGE                               *
+482********************************************************************
+483
+484 25-CALCULATE-ISSUE-AGE.
+485* CONVERT ISSUE DATE TO INTERNAL FORMAT
+486     MOVE ISSUE-DATE OF CV-SEGMENT TO WS-INT-ISSU-DATE
+487     CALL 'CKDCINEX' USING WS-ISSU-DATE WS-INT-ISSU-DATE
+488* CALCULATE AGE DIFFERENCE
+489     CALL 'CKDCARTH' USING WS-INT-CURR-DATE
+49                           WS-INT-ISSU-DATE
+491                           WS-DCARTH-DIFFERENCE
+492                           WS-ISSUE-AGE
+493 2599-CALCULATE-ISSUE-AGE-EXIT.
+494     EXIT.
+495 EJECT
+496********************************************************************
+497*                        CLOSE FILES                              *
+498********************************************************************
+499
+5 EOJ9-CLOSE-FILES.
+51* CLOSE REPORT FILE
+52     CLOSE REPORT-FILE
+53* CLOSE INFORCE FILE
+54     MOVE '5' TO WS-IO-CODE.
+55     CALL 'CKVSAMIO'
+56          USING INFORCE-VSAM
+57                WS-IO-CODE
+58* DISPLAY COUNTERS
+59     DISPLAY 'POLICIES READ: ' WS-POLICY-READ-CNT
+51     DISPLAY 'RECORDS WRITTEN: ' WS-REC-WRITTEN-CNTR
+511     GO TO EOJ9999-EXIT.
+512 EOJ99-ABEND.
+513     DISPLAY 'PROGRAM ABENDING DUE TO ERROR'
+514 EOJ9999-EXIT.
+515     EXIT.
